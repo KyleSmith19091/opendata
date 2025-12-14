@@ -1,6 +1,6 @@
 // SeriesDictionary value structure
 
-use super::common::*;
+use super::*;
 use bytes::{Bytes, BytesMut};
 
 /// SeriesDictionary value: SingleArray<series_id: u32>

@@ -1,6 +1,6 @@
 // InvertedIndex value structure using RoaringBitmap
 
-use super::common::*;
+use super::*;
 use bytes::Bytes;
 use roaring::RoaringBitmap;
 

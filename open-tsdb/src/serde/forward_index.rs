@@ -1,6 +1,6 @@
 // ForwardIndex value structure with MetricMeta and AttributeBinding
 
-use super::common::*;
+use super::*;
 use bytes::{Bytes, BytesMut};
 
 /// MetricMeta: Encodes the series' metric type and auxiliary flags

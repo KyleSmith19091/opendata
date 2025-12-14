@@ -1,6 +1,6 @@
 // Key structures with big-endian encoding
 
-use super::common::*;
+use super::*;
 use bytes::{Bytes, BytesMut};
 
 /// BucketList key (global-scoped)

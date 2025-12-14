@@ -1,6 +1,6 @@
 // TimeSeries value structure with Gorilla compression using tsz crate
 
-use super::common::*;
+use super::*;
 use bytes::Bytes;
 use tsz::stream::{BufferedWriter, Error as TszError, Read as TszRead};
 use tsz::{Bit, DataPoint, Decode, Encode, StdDecoder, StdEncoder};

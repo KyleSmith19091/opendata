@@ -15,3 +15,7 @@ slatedb = "0.9.1"
 opendata-common = { path = "./opendata-common" }
 rstest = "0.19"
 bytes = "1.0"
+chrono = "0.4"
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+tracing = "0.1"

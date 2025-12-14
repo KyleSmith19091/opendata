@@ -9,6 +9,12 @@ opendata-common.workspace = true
 bytes.workspace = true
 roaring = "0.7"
 tsz = "0.1"
+blake3 = "1.8.2"
+chrono.workspace = true
+promql-parser = "0.6"
+tokio.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true

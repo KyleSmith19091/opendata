@@ -1,6 +1,6 @@
 // BucketList value structure
 
-use super::common::*;
+use super::*;
 use bytes::{Bytes, BytesMut};
 
 /// BucketList value: SingleArray<(bucket_size: u8, time_bucket: u32)>
