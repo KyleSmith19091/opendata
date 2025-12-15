@@ -75,10 +75,11 @@ strings that are referenced throughout the value definitions:
   strings for these fields, so `len > 0` implies a non-empty UTF-8 payload.
 - `Array<T>`: `count: u16` (little-endian) followed by `count` serialized
   elements of type `T`, encoded back-to-back with no additional padding.
-- `SingleArray<T>`: Serialized elements of type `T`, encoded back-to-back 
+- `FixedElementArray<T>`: Serialized elements of type `T`, encoded back-to-back 
   with no additional padding. The array is not preceded by a count since
-  this array must only be used when the schema only contains a single
-  array and nothing else.
+  the number of elements can be computed by dividing the buffer length by the
+  fixed element size. This array must only be used when the schema only contains
+  a single array and nothing else.
 
 **Note on Endianness**: Value schemas use little-endian encoding for multi-byte
 integers. This differs from key schemas, which use big-endian to maintain
@@ -127,7 +128,7 @@ by the new coarse buckets in the listing.
 ┌─────────────────────────────────────────────────────────┐
 │                    BucketsListValue                     │
 ├─────────────────────────────────────────────────────────┤
-│  SingleArray<(bucket_size: u8, time_bucket: u32)>       │
+│  FixedElementArray<(bucket_size: u8, time_bucket: u32)>       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -171,13 +172,13 @@ bucket, not globally.
 ┌──────────────────────────────────────────────────────────┐
 │                   SeriesDictionaryValue                  │
 ├──────────────────────────────────────────────────────────┤
-│  SingleArray<series_id: u32>                             │
+│  FixedElementArray<series_id: u32>                             │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **Structure:**
 
-- The value is a `SingleArray<u32>` encoding the list of `series_id` values that
+- The value is a `FixedElementArray<u32>` encoding the list of `series_id` values that
   have the specified fingerprint. In the common case of no collisions, this array
   contains a single `series_id`. When collisions occur, multiple series IDs are
   stored, and the forward index must be consulted to disambiguate by comparing

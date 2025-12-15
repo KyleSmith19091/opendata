@@ -1,6 +1,8 @@
 use blake3::Hasher;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use opendata_common::StorageError;
+
 use crate::model::Attribute;
 
 /// Error type for OpenTSDB operations
@@ -38,6 +40,27 @@ impl From<std::time::SystemTimeError> for OpenTsdbError {
 impl From<std::num::TryFromIntError> for OpenTsdbError {
     fn from(err: std::num::TryFromIntError) -> Self {
         OpenTsdbError::InvalidInput(format!("Integer conversion error: {}", err))
+    }
+}
+
+impl From<&str> for OpenTsdbError {
+    fn from(msg: &str) -> Self {
+        OpenTsdbError::InvalidInput(msg.to_string())
+    }
+}
+
+impl From<StorageError> for OpenTsdbError {
+    fn from(err: StorageError) -> Self {
+        match err {
+            StorageError::Storage(msg) => OpenTsdbError::Storage(msg),
+            StorageError::Internal(msg) => OpenTsdbError::Internal(msg),
+        }
+    }
+}
+
+impl From<crate::serde::EncodingError> for OpenTsdbError {
+    fn from(err: crate::serde::EncodingError) -> Self {
+        OpenTsdbError::Encoding(err.message)
     }
 }
 

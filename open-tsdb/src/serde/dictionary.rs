@@ -4,7 +4,7 @@ use super::*;
 use crate::model::SeriesId;
 use bytes::{Bytes, BytesMut};
 
-/// SeriesDictionary value: SingleArray<series_id: u32>
+/// SeriesDictionary value: FixedElementArray<series_id: u32>
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeriesDictionaryValue {
     pub series_ids: Vec<SeriesId>,
@@ -13,13 +13,16 @@ pub struct SeriesDictionaryValue {
 impl SeriesDictionaryValue {
     pub fn encode(&self) -> Bytes {
         let mut buf = BytesMut::new();
-        encode_single_array(&self.series_ids, &mut buf);
+        encode_fixed_element_array(&self.series_ids, &mut buf);
         buf.freeze()
     }
 
-    pub fn decode(buf: &[u8], count: u8) -> Result<Self, EncodingError> {
+    pub fn decode(buf: &[u8]) -> Result<Self, EncodingError> {
+        // Each SeriesId is 4 bytes (u32)
+        const SERIES_ID_SIZE: usize = 4;
+
         let mut slice = buf;
-        let series_ids = decode_single_array(&mut slice, count as usize)?;
+        let series_ids = decode_fixed_element_array(&mut slice, SERIES_ID_SIZE)?;
         Ok(SeriesDictionaryValue { series_ids })
     }
 }
@@ -56,7 +59,7 @@ mod tests {
 
         // when
         let encoded = value.encode();
-        let decoded = SeriesDictionaryValue::decode(encoded.as_ref(), 5u8).unwrap();
+        let decoded = SeriesDictionaryValue::decode(encoded.as_ref()).unwrap();
 
         // then
         assert_eq!(decoded, value);
@@ -69,7 +72,7 @@ mod tests {
 
         // when
         let encoded = value.encode();
-        let decoded = SeriesDictionaryValue::decode(encoded.as_ref(), 0u8).unwrap();
+        let decoded = SeriesDictionaryValue::decode(encoded.as_ref()).unwrap();
 
         // then
         assert_eq!(decoded, value);
@@ -84,7 +87,7 @@ mod tests {
 
         // when
         let encoded = value.encode();
-        let decoded = SeriesDictionaryValue::decode(encoded.as_ref(), 1u8).unwrap();
+        let decoded = SeriesDictionaryValue::decode(encoded.as_ref()).unwrap();
 
         // then
         assert_eq!(decoded, value);

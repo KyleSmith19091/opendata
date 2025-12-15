@@ -1,5 +1,6 @@
 use std::time::SystemTime;
 
+use crate::serde::RecordType;
 use crate::util::{Result, hour_bucket_in_epoch_minutes};
 
 /// Series ID (unique within a time bucket)
@@ -13,6 +14,11 @@ pub(crate) type BucketStart = u32;
 
 /// Time bucket size (1-15, exponential: 1=1h, 2=2h, 3=4h, 4=8h, etc. = 2^(n-1) hours)
 pub(crate) type BucketSize = u8;
+
+/// Record tag combining record type and optional bucket size
+/// Encoded as a single byte with high 4 bits for type and low 4 bits for bucket size (or reserved).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RecordTag(pub(crate) u8);
 
 /// Attribute key-value pair
 pub(crate) type Attribute = (String, String);
@@ -55,6 +61,10 @@ impl TimeBucket {
     pub(crate) fn round_to_hour(time: SystemTime) -> Result<Self> {
         let bucket = hour_bucket_in_epoch_minutes(time)?;
         Ok(Self::hour(bucket))
+    }
+
+    pub(crate) fn size_in_mins(&self) -> u32 {
+        (self.size.pow(2) * 60) as u32
     }
 }
 

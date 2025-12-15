@@ -1,7 +1,7 @@
 // Key structures with big-endian encoding
 
 use super::*;
-use crate::model::{BucketSize, BucketStart, SeriesFingerprint, SeriesId};
+use crate::model::{BucketSize, BucketStart, RecordTag, SeriesFingerprint, SeriesId};
 use bytes::{Bytes, BytesMut};
 
 /// BucketList key (global-scoped)
@@ -12,7 +12,7 @@ impl BucketListKey {
     pub fn encode(&self) -> Bytes {
         Bytes::from(vec![
             KEY_VERSION,
-            encode_record_tag(RecordType::BucketList, None),
+            RecordTag::new_global_scoped(RecordType::BucketList).as_byte(),
         ])
     }
 
@@ -30,16 +30,16 @@ impl BucketListKey {
                 ),
             });
         }
-        let (record_type, bucket_size) = decode_record_tag(buf[1])?;
-        if record_type != RecordType::BucketList {
+        let record_tag = RecordTag::from_byte(buf[1])?;
+        if record_tag.record_type()? != RecordType::BucketList {
             return Err(EncodingError {
                 message: format!(
                     "Invalid record type: expected BucketList, got {:?}",
-                    record_type
+                    record_tag.record_type()?
                 ),
             });
         }
-        if bucket_size.is_some() {
+        if record_tag.bucket_size().is_some() {
             return Err(EncodingError {
                 message: "BucketListKey should be global-scoped (bucket_size should be None)"
                     .to_string(),
@@ -53,8 +53,8 @@ impl BucketListKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeriesDictionaryKey {
     pub time_bucket: BucketStart,
-    pub series_fingerprint: SeriesFingerprint,
     pub bucket_size: BucketSize,
+    pub series_fingerprint: SeriesFingerprint,
 }
 
 impl SeriesDictionaryKey {
@@ -62,7 +62,7 @@ impl SeriesDictionaryKey {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(&[
             KEY_VERSION,
-            encode_record_tag(RecordType::SeriesDictionary, Some(self.bucket_size)),
+            RecordTag::new_bucket_scoped(RecordType::SeriesDictionary, self.bucket_size).as_byte(),
         ]);
         buf.extend_from_slice(&self.time_bucket.to_be_bytes());
         buf.extend_from_slice(&self.series_fingerprint.to_be_bytes());
@@ -83,16 +83,16 @@ impl SeriesDictionaryKey {
                 ),
             });
         }
-        let (record_type, bucket_size) = decode_record_tag(buf[1])?;
-        if record_type != RecordType::SeriesDictionary {
+        let record_tag = RecordTag::from_byte(buf[1])?;
+        if record_tag.record_type()? != RecordType::SeriesDictionary {
             return Err(EncodingError {
                 message: format!(
                     "Invalid record type: expected SeriesDictionary, got {:?}",
-                    record_type
+                    record_tag.record_type()?
                 ),
             });
         }
-        let bucket_size = bucket_size.ok_or_else(|| EncodingError {
+        let bucket_size = record_tag.bucket_size().ok_or_else(|| EncodingError {
             message: "SeriesDictionaryKey should be bucket-scoped".to_string(),
         })?;
 
@@ -123,7 +123,7 @@ impl ForwardIndexKey {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(&[
             KEY_VERSION,
-            encode_record_tag(RecordType::ForwardIndex, Some(self.bucket_size)),
+            RecordTag::new_bucket_scoped(RecordType::ForwardIndex, self.bucket_size).as_byte(),
         ]);
         buf.extend_from_slice(&self.time_bucket.to_be_bytes());
         buf.extend_from_slice(&self.series_id.to_be_bytes());
@@ -144,16 +144,16 @@ impl ForwardIndexKey {
                 ),
             });
         }
-        let (record_type, bucket_size) = decode_record_tag(buf[1])?;
-        if record_type != RecordType::ForwardIndex {
+        let record_tag = RecordTag::from_byte(buf[1])?;
+        if record_tag.record_type()? != RecordType::ForwardIndex {
             return Err(EncodingError {
                 message: format!(
                     "Invalid record type: expected ForwardIndex, got {:?}",
-                    record_type
+                    record_tag.record_type()?
                 ),
             });
         }
-        let bucket_size = bucket_size.ok_or_else(|| EncodingError {
+        let bucket_size = record_tag.bucket_size().ok_or_else(|| EncodingError {
             message: "ForwardIndexKey should be bucket-scoped".to_string(),
         })?;
 
@@ -182,7 +182,7 @@ impl InvertedIndexKey {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(&[
             KEY_VERSION,
-            encode_record_tag(RecordType::InvertedIndex, Some(self.bucket_size)),
+            RecordTag::new_bucket_scoped(RecordType::InvertedIndex, self.bucket_size).as_byte(),
         ]);
         buf.extend_from_slice(&self.time_bucket.to_be_bytes());
         encode_utf8(&self.attribute, &mut buf);
@@ -204,16 +204,16 @@ impl InvertedIndexKey {
                 ),
             });
         }
-        let (record_type, bucket_size) = decode_record_tag(buf[1])?;
-        if record_type != RecordType::InvertedIndex {
+        let record_tag = RecordTag::from_byte(buf[1])?;
+        if record_tag.record_type()? != RecordType::InvertedIndex {
             return Err(EncodingError {
                 message: format!(
                     "Invalid record type: expected InvertedIndex, got {:?}",
-                    record_type
+                    record_tag.record_type()?
                 ),
             });
         }
-        let bucket_size = bucket_size.ok_or_else(|| EncodingError {
+        let bucket_size = record_tag.bucket_size().ok_or_else(|| EncodingError {
             message: "InvertedIndexKey should be bucket-scoped".to_string(),
         })?;
 
@@ -246,7 +246,7 @@ impl TimeSeriesKey {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(&[
             KEY_VERSION,
-            encode_record_tag(RecordType::TimeSeries, Some(self.bucket_size)),
+            RecordTag::new_bucket_scoped(RecordType::TimeSeries, self.bucket_size).as_byte(),
         ]);
         buf.extend_from_slice(&self.time_bucket.to_be_bytes());
         buf.extend_from_slice(&self.series_id.to_be_bytes());
@@ -267,16 +267,16 @@ impl TimeSeriesKey {
                 ),
             });
         }
-        let (record_type, bucket_size) = decode_record_tag(buf[1])?;
-        if record_type != RecordType::TimeSeries {
+        let record_tag = RecordTag::from_byte(buf[1])?;
+        if record_tag.record_type()? != RecordType::TimeSeries {
             return Err(EncodingError {
                 message: format!(
                     "Invalid record type: expected TimeSeries, got {:?}",
-                    record_type
+                    record_tag.record_type()?
                 ),
             });
         }
-        let bucket_size = bucket_size.ok_or_else(|| EncodingError {
+        let bucket_size = record_tag.bucket_size().ok_or_else(|| EncodingError {
             message: "TimeSeriesKey should be bucket-scoped".to_string(),
         })?;
 

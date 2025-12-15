@@ -4,7 +4,7 @@ use super::*;
 use crate::model::{BucketSize, BucketStart};
 use bytes::{Bytes, BytesMut};
 
-/// BucketList value: SingleArray<(bucket_size: u8, time_bucket: u32)>
+/// BucketList value: FixedElementArray<(bucket_size: u8, time_bucket: u32)>
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BucketListValue {
     pub buckets: Vec<(BucketSize, BucketStart)>,
@@ -13,13 +13,16 @@ pub struct BucketListValue {
 impl BucketListValue {
     pub fn encode(&self) -> Bytes {
         let mut buf = BytesMut::new();
-        encode_single_array(&self.buckets, &mut buf);
+        encode_fixed_element_array(&self.buckets, &mut buf);
         buf.freeze()
     }
 
-    pub fn decode(buf: &[u8], count: usize) -> Result<Self, EncodingError> {
+    pub fn decode(buf: &[u8]) -> Result<Self, EncodingError> {
+        // Each (BucketSize, BucketStart) tuple is 5 bytes: 1 byte (u8) + 4 bytes (u32)
+        const TUPLE_SIZE: usize = 1 + 4;
+
         let mut slice = buf;
-        let buckets = decode_single_array(&mut slice, count)?;
+        let buckets = decode_fixed_element_array(&mut slice, TUPLE_SIZE)?;
         Ok(BucketListValue { buckets })
     }
 }
@@ -59,7 +62,7 @@ mod tests {
 
         // when
         let encoded = value.encode();
-        let decoded = BucketListValue::decode(encoded.as_ref(), 3).unwrap();
+        let decoded = BucketListValue::decode(encoded.as_ref()).unwrap();
 
         // then
         assert_eq!(decoded, value);
@@ -72,7 +75,7 @@ mod tests {
 
         // when
         let encoded = value.encode();
-        let decoded = BucketListValue::decode(encoded.as_ref(), 0).unwrap();
+        let decoded = BucketListValue::decode(encoded.as_ref()).unwrap();
 
         // then
         assert_eq!(decoded, value);
