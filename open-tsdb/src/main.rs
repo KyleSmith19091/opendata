@@ -4,7 +4,6 @@ mod head;
 mod index;
 mod minitsdb;
 mod model;
-mod otel;
 mod promql;
 mod serde;
 mod storage;

@@ -84,6 +84,15 @@ pub(crate) struct Sample {
     pub(crate) value: f64,
 }
 
+/// A sample with all its attributes, including the metric name
+#[derive(Clone, Debug)]
+pub(crate) struct SampleWithAttributes {
+    pub(crate) attributes: Vec<Attribute>,
+    pub(crate) metric_unit: Option<String>,
+    pub(crate) metric_type: MetricType,
+    pub(crate) sample: Sample,
+}
+
 /// Convert TimeBucketSize to hours
 pub fn time_bucket_size_hours(size: BucketSize) -> u32 {
     if size == 0 || size > 15 {

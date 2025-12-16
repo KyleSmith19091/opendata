@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use dashmap::DashMap;
-use opentelemetry_proto::tonic::metrics::v1::{Metric, MetricsData};
 
 use crate::{
     index::{ForwardIndex, InvertedIndex},
-    model::{Attribute, MetricType, Sample, SeriesFingerprint, SeriesId, SeriesSpec, TimeBucket},
-    otel::{OtelUtil, collect_resource_attributes, collect_scope_attributes},
-    util::{Fingerprint, Result, normalize_str},
+    model::{
+        Attribute, MetricType, Sample, SampleWithAttributes, SeriesFingerprint, SeriesId,
+        SeriesSpec, TimeBucket,
+    },
+    util::Fingerprint,
 };
 
 /// The delta chunk is the current in-memory segment of OpenTSDB representing
@@ -40,44 +41,14 @@ impl<'a> TsdbDeltaBuilder<'a> {
         }
     }
 
-    /// Ingest a full MetricsData payload, processing all resource_metrics, scope_metrics, and metrics.
-    /// Resource and scope attributes are merged into each sample's attributes.
-    pub(crate) fn ingest_metrics_data(mut self, data: MetricsData) -> Result<Self> {
-        for resource_metrics in data.resource_metrics {
-            let resource_attrs = collect_resource_attributes(resource_metrics.resource.as_ref());
-
-            for scope_metrics in resource_metrics.scope_metrics {
-                let scope_attrs = collect_scope_attributes(scope_metrics.scope.as_ref());
-
-                for metric in scope_metrics.metrics {
-                    self.ingest_metric_internal(&metric, &resource_attrs, &scope_attrs)?;
-                }
-            }
-        }
-        Ok(self)
-    }
-
-    /// Internal method to ingest a single metric with pre-collected resource and scope attributes
-    fn ingest_metric_internal(
-        &mut self,
-        metric: &Metric,
-        resource_attrs: &[Attribute],
-        scope_attrs: &[Attribute],
-    ) -> Result<()> {
-        let metric_unit = normalize_str(&metric.unit);
-        let metric_type = MetricType::try_from(metric)?;
-        let samples_with_attrs = OtelUtil::samples(metric, resource_attrs, scope_attrs);
-
-        for sample_with_attrs in samples_with_attrs {
-            self.ingest_sample(
-                sample_with_attrs.attributes,
-                metric_unit.clone(),
-                metric_type,
-                sample_with_attrs.sample,
-            );
-        }
-
-        Ok(())
+    /// Ingest a sample with its attributes
+    pub(crate) fn ingest(&mut self, sample_with_attrs: SampleWithAttributes) {
+        self.ingest_sample(
+            sample_with_attrs.attributes,
+            sample_with_attrs.metric_unit,
+            sample_with_attrs.metric_type,
+            sample_with_attrs.sample,
+        );
     }
 
     fn ingest_sample(

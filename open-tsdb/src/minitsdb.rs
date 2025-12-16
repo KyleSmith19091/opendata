@@ -23,16 +23,13 @@ use std::sync::{Arc, atomic::AtomicU32};
 
 use dashmap::DashMap;
 use opendata_common::{Storage, StorageRead};
-use opentelemetry_proto::tonic::metrics::v1::MetricsData;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::delta::{TsdbDelta, TsdbDeltaBuilder};
+use crate::head::TsdbHead;
+use crate::model::{SampleWithAttributes, SeriesFingerprint, SeriesId, TimeBucket};
 use crate::storage::OpenTsdbStorageReadExt;
 use crate::util::Result;
-use crate::{
-    head::TsdbHead,
-    model::{SeriesFingerprint, SeriesId, TimeBucket},
-};
 
 pub(crate) struct MiniState {
     head: TsdbHead,
@@ -104,13 +101,16 @@ impl MiniTsdb {
         })
     }
 
-    /// Ingest an OLTP payload (this is the main entry point for ingestion)
-    pub(crate) async fn ingest(&self, data: MetricsData) -> Result<()> {
-        let delta =
-            TsdbDeltaBuilder::new(self.bucket.clone(), &self.series_dict, &self.next_series_id)
-                .ingest_metrics_data(data)?
-                .build();
+    /// Ingest samples with attributes (this is the main entry point for ingestion)
+    pub(crate) async fn ingest(&self, samples: Vec<SampleWithAttributes>) -> Result<()> {
+        let mut builder =
+            TsdbDeltaBuilder::new(self.bucket.clone(), &self.series_dict, &self.next_series_id);
 
+        for sample in samples {
+            builder.ingest(sample);
+        }
+
+        let delta = builder.build();
         self.ingest_delta(&delta).await
     }
 
