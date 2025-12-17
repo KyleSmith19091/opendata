@@ -12,20 +12,24 @@ edition = "2024"
 
 [workspace.dependencies]
 async-trait = "0.1"
+axum = "0.7"
 bytes = "1.0"
 chrono = "0.4"
+clap = { version = "4", features = ["derive", "env"] }
+config = "0.14"
 dashmap = "6.1.0"
 fail = "0.5"
 moka = { version = "0.12", features = ["future"] }
 opendata-common = { path = "./opendata-common" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rstest = "0.19"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 slatedb = "0.9.1"
 thiserror = "2.0"
 tokio = { version = "1.0", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 uuid = "1.14.0"
-axum = "0.7"
-tower-http = { version = "0.5", features = ["cors"] }

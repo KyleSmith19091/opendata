@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -9,6 +9,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use tokio::time::interval;
 
+use super::config::PrometheusConfig;
 use super::request::{
     LabelValuesParams, LabelsParams, LabelsRequest, QueryParams, QueryRangeParams,
     QueryRangeRequest, QueryRequest, SeriesParams, SeriesRequest,
@@ -17,18 +18,22 @@ use super::response::{
     LabelValuesResponse, LabelsResponse, QueryRangeResponse, QueryResponse, SeriesResponse,
 };
 use super::router::PromqlRouter;
-use crate::model::{Attribute, MetricType, Sample, SampleWithAttributes, TimeBucket};
+use super::scraper::Scraper;
 use crate::tsdb::Tsdb;
 use crate::util::OpenTsdbError;
 
 /// Server configuration
 pub(crate) struct ServerConfig {
     pub(crate) port: u16,
+    pub(crate) prometheus_config: PrometheusConfig,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
-        Self { port: 9090 }
+        Self {
+            port: 9090,
+            prometheus_config: PrometheusConfig::default(),
+        }
     }
 }
 
@@ -47,14 +52,31 @@ impl PromqlServer {
     pub(crate) async fn run(self) {
         let tsdb = self.tsdb.clone();
 
-        // Spawn background task to ingest 'up' metric every 15 seconds
-        let tsdb_for_ingest = self.tsdb.clone();
+        // Start the scraper if there are scrape configs
+        if !self.config.prometheus_config.scrape_configs.is_empty() {
+            let scraper = Arc::new(Scraper::new(
+                self.tsdb.clone(),
+                self.config.prometheus_config.clone(),
+            ));
+            scraper.run();
+            tracing::info!(
+                "Started scraper with {} job(s)",
+                self.config.prometheus_config.scrape_configs.len()
+            );
+        } else {
+            tracing::info!("No scrape configs found, scraper not started");
+        }
+
+        // Start the flush timer (flushes TSDB every 30 seconds)
+        let tsdb_for_flush = self.tsdb.clone();
         tokio::spawn(async move {
-            let mut ticker = interval(Duration::from_secs(15));
+            let mut ticker = interval(Duration::from_secs(30));
             loop {
                 ticker.tick().await;
-                if let Err(e) = ingest_up_metric(&tsdb_for_ingest).await {
-                    tracing::error!("Failed to ingest up metric: {}", e);
+                if let Err(e) = tsdb_for_flush.flush().await {
+                    tracing::error!("Failed to flush TSDB: {}", e);
+                } else {
+                    tracing::debug!("Flushed TSDB");
                 }
             }
         });
@@ -77,44 +99,6 @@ impl PromqlServer {
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
         axum::serve(listener, app).await.unwrap();
     }
-}
-
-/// Ingest a sample for the 'up' metric
-async fn ingest_up_metric(tsdb: &Tsdb) -> crate::util::Result<()> {
-    let now = SystemTime::now();
-    let bucket = TimeBucket::round_to_hour(now)?;
-
-    let timestamp_ms = now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
-
-    let sample = SampleWithAttributes {
-        attributes: vec![
-            Attribute {
-                key: "__name__".to_string(),
-                value: "up".to_string(),
-            },
-            Attribute {
-                key: "job".to_string(),
-                value: "prometheus".to_string(),
-            },
-            Attribute {
-                key: "instance".to_string(),
-                value: "localhost:9090".to_string(),
-            },
-        ],
-        metric_unit: None,
-        metric_type: MetricType::Gauge,
-        sample: Sample {
-            timestamp: timestamp_ms,
-            value: 1.0,
-        },
-    };
-
-    let mini = tsdb.get_or_create_for_ingest(bucket).await?;
-    mini.ingest(vec![sample]).await?;
-    tsdb.flush().await?;
-
-    tracing::debug!("Ingested up metric at timestamp {}", timestamp_ms);
-    Ok(())
 }
 
 /// Error response wrapper for converting OpenTsdbError to HTTP responses
