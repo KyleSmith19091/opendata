@@ -5,4 +5,5 @@ mod request;
 mod response;
 mod router;
 pub(crate) mod selector;
+pub(crate) mod server;
 mod tsdb_router;
