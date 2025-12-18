@@ -1,6 +1,8 @@
 pub(crate) mod config;
 pub(crate) mod evaluator;
 mod functions;
+pub(crate) mod metrics;
+mod middleware;
 pub(crate) mod openmetrics;
 mod parser;
 mod request;

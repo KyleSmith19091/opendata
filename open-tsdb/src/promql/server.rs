@@ -10,6 +10,8 @@ use axum::{Json, Router};
 use tokio::time::interval;
 
 use super::config::PrometheusConfig;
+use super::metrics::Metrics;
+use super::middleware::MetricsLayer;
 use super::request::{
     LabelValuesParams, LabelsParams, LabelsRequest, QueryParams, QueryRangeParams,
     QueryRangeRequest, QueryRequest, SeriesParams, SeriesRequest,
@@ -21,6 +23,13 @@ use super::router::PromqlRouter;
 use super::scraper::Scraper;
 use crate::tsdb::Tsdb;
 use crate::util::OpenTsdbError;
+
+/// Shared application state.
+#[derive(Clone)]
+pub(crate) struct AppState {
+    pub(crate) tsdb: Arc<Tsdb>,
+    pub(crate) metrics: Arc<Metrics>,
+}
 
 /// Server configuration
 pub(crate) struct ServerConfig {
@@ -50,13 +59,21 @@ impl PromqlServer {
 
     /// Run the HTTP server
     pub(crate) async fn run(self) {
-        let tsdb = self.tsdb.clone();
+        // Create metrics registry
+        let metrics = Arc::new(Metrics::new());
+
+        // Create app state
+        let state = AppState {
+            tsdb: self.tsdb.clone(),
+            metrics: metrics.clone(),
+        };
 
         // Start the scraper if there are scrape configs
         if !self.config.prometheus_config.scrape_configs.is_empty() {
             let scraper = Arc::new(Scraper::new(
                 self.tsdb.clone(),
                 self.config.prometheus_config.clone(),
+                metrics.clone(),
             ));
             scraper.run();
             tracing::info!(
@@ -81,7 +98,7 @@ impl PromqlServer {
             }
         });
 
-        // Build router
+        // Build router with metrics middleware
         let app = Router::new()
             .route("/api/v1/query", get(handle_query).post(handle_query))
             .route(
@@ -91,7 +108,9 @@ impl PromqlServer {
             .route("/api/v1/series", get(handle_series).post(handle_series))
             .route("/api/v1/labels", get(handle_labels))
             .route("/api/v1/label/{name}/values", get(handle_label_values))
-            .with_state(tsdb);
+            .route("/metrics", get(handle_metrics))
+            .layer(MetricsLayer::new(metrics))
+            .with_state(state);
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.config.port));
         tracing::info!("Starting Prometheus-compatible server on {}", addr);
@@ -131,46 +150,51 @@ impl From<OpenTsdbError> for ApiError {
 
 /// Handle /api/v1/query
 async fn handle_query(
-    State(tsdb): State<Arc<Tsdb>>,
+    State(state): State<AppState>,
     Query(params): Query<QueryParams>,
 ) -> Result<Json<QueryResponse>, ApiError> {
     let request: QueryRequest = params.try_into()?;
-    Ok(Json(tsdb.query(request).await))
+    Ok(Json(state.tsdb.query(request).await))
 }
 
 /// Handle /api/v1/query_range
 async fn handle_query_range(
-    State(tsdb): State<Arc<Tsdb>>,
+    State(state): State<AppState>,
     Query(params): Query<QueryRangeParams>,
 ) -> Result<Json<QueryRangeResponse>, ApiError> {
     let request: QueryRangeRequest = params.try_into()?;
-    Ok(Json(tsdb.query_range(request).await))
+    Ok(Json(state.tsdb.query_range(request).await))
 }
 
 /// Handle /api/v1/series
 async fn handle_series(
-    State(tsdb): State<Arc<Tsdb>>,
+    State(state): State<AppState>,
     Query(params): Query<SeriesParams>,
 ) -> Result<Json<SeriesResponse>, ApiError> {
     let request: SeriesRequest = params.try_into()?;
-    Ok(Json(tsdb.series(request).await))
+    Ok(Json(state.tsdb.series(request).await))
 }
 
 /// Handle /api/v1/labels
 async fn handle_labels(
-    State(tsdb): State<Arc<Tsdb>>,
+    State(state): State<AppState>,
     Query(params): Query<LabelsParams>,
 ) -> Result<Json<LabelsResponse>, ApiError> {
     let request: LabelsRequest = params.try_into()?;
-    Ok(Json(tsdb.labels(request).await))
+    Ok(Json(state.tsdb.labels(request).await))
 }
 
 /// Handle /api/v1/label/{name}/values
 async fn handle_label_values(
-    State(tsdb): State<Arc<Tsdb>>,
+    State(state): State<AppState>,
     Path(name): Path<String>,
     Query(params): Query<LabelValuesParams>,
 ) -> Result<Json<LabelValuesResponse>, ApiError> {
     let request = params.into_request(name)?;
-    Ok(Json(tsdb.label_values(request).await))
+    Ok(Json(state.tsdb.label_values(request).await))
+}
+
+/// Handle /metrics endpoint - returns Prometheus text format
+async fn handle_metrics(State(state): State<AppState>) -> String {
+    state.metrics.encode()
 }

@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::time::interval;
 
 use super::config::{PrometheusConfig, ScrapeConfig};
+use super::metrics::{Metrics, ScrapeLabels, TargetLabels};
 use super::openmetrics::parse_openmetrics;
 use crate::model::{Attribute, SampleWithAttributes, TimeBucket};
 use crate::tsdb::Tsdb;
@@ -18,11 +19,12 @@ pub struct Scraper {
     tsdb: Arc<Tsdb>,
     http_client: reqwest::Client,
     config: PrometheusConfig,
+    metrics: Arc<Metrics>,
 }
 
 impl Scraper {
-    /// Create a new scraper with the given TSDB and configuration.
-    pub fn new(tsdb: Arc<Tsdb>, config: PrometheusConfig) -> Self {
+    /// Create a new scraper with the given TSDB, configuration, and metrics registry.
+    pub fn new(tsdb: Arc<Tsdb>, config: PrometheusConfig, metrics: Arc<Metrics>) -> Self {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
@@ -32,6 +34,7 @@ impl Scraper {
             tsdb,
             http_client,
             config,
+            metrics,
         }
     }
 
@@ -90,6 +93,48 @@ impl Scraper {
         target: &str,
         extra_labels: &HashMap<String, String>,
     ) -> Result<()> {
+        let scrape_labels = ScrapeLabels {
+            job: job_name.to_string(),
+            instance: target.to_string(),
+        };
+        let target_labels = TargetLabels {
+            job: job_name.to_string(),
+            instance: target.to_string(),
+        };
+
+        let result = self.do_scrape_target(job_name, target, extra_labels).await;
+
+        match &result {
+            Ok(sample_count) => {
+                // Target is up
+                self.metrics.up.get_or_create(&target_labels).set(1);
+                // Record samples scraped
+                self.metrics
+                    .scrape_samples_scraped
+                    .get_or_create(&scrape_labels)
+                    .inc_by(*sample_count as u64);
+            }
+            Err(_) => {
+                // Target is down
+                self.metrics.up.get_or_create(&target_labels).set(0);
+                // Record failed scrape
+                self.metrics
+                    .scrape_samples_failed
+                    .get_or_create(&scrape_labels)
+                    .inc();
+            }
+        }
+
+        result.map(|_| ())
+    }
+
+    /// Internal scrape implementation that returns sample count on success.
+    async fn do_scrape_target(
+        &self,
+        job_name: &str,
+        target: &str,
+        extra_labels: &HashMap<String, String>,
+    ) -> Result<usize> {
         let url = format!("http://{}/metrics", target);
 
         tracing::debug!("Scraping {} for job {}", url, job_name);
@@ -151,7 +196,7 @@ impl Scraper {
             job_name
         );
 
-        Ok(())
+        Ok(sample_count)
     }
 
     /// Ingest samples into the TSDB.
@@ -194,9 +239,10 @@ mod tests {
         );
         let tsdb = Arc::new(Tsdb::new(storage));
         let config = PrometheusConfig::default();
+        let metrics = Arc::new(Metrics::new());
 
         // when
-        let scraper = Scraper::new(tsdb, config);
+        let scraper = Scraper::new(tsdb, config, metrics);
 
         // then
         assert!(scraper.config.scrape_configs.is_empty());
