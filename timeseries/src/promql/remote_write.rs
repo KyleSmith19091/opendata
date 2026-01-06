@@ -11,9 +11,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use prost::Message;
 
-use crate::error::TimeseriesError;
-use crate::model::{MetricType, Sample, SampleWithLabels};
-use crate::series::Label;
+use crate::error::Error;
+use crate::model::SampleWithLabels;
+use crate::series::{Label, MetricType, Sample};
 use crate::tsdb::Tsdb;
 use crate::util::Result;
 
@@ -86,8 +86,7 @@ pub fn convert_write_request(request: WriteRequest) -> Vec<SampleWithLabels> {
                 metric_unit: None, // Remote Write 1.0 doesn't include unit info
                 metric_type: MetricType::Gauge, // Default to Gauge since type info not in 1.0
                 sample: Sample {
-                    // Convert from milliseconds (i64) to milliseconds (u64)
-                    timestamp: sample.timestamp as u64,
+                    timestamp_ms: sample.timestamp,
                     value: sample.value,
                 },
             });
@@ -102,13 +101,11 @@ pub fn parse_remote_write(body: &[u8]) -> Result<Vec<SampleWithLabels>> {
     // Decompress snappy (block format)
     let decompressed = snap::raw::Decoder::new()
         .decompress_vec(body)
-        .map_err(|e| {
-            TimeseriesError::InvalidInput(format!("Snappy decompression failed: {}", e))
-        })?;
+        .map_err(|e| Error::InvalidInput(format!("Snappy decompression failed: {}", e)))?;
 
     // Decode protobuf
     let request = WriteRequest::decode(decompressed.as_slice())
-        .map_err(|e| TimeseriesError::InvalidInput(format!("Protobuf decode failed: {}", e)))?;
+        .map_err(|e| Error::InvalidInput(format!("Protobuf decode failed: {}", e)))?;
 
     Ok(convert_write_request(request))
 }
@@ -124,15 +121,15 @@ pub struct RemoteWriteState {
 }
 
 /// Error response for remote write requests.
-pub struct RemoteWriteError(TimeseriesError);
+pub struct RemoteWriteError(Error);
 
 impl IntoResponse for RemoteWriteError {
     fn into_response(self) -> Response {
         let (status, error_type) = match &self.0 {
-            TimeseriesError::InvalidInput(_) => (StatusCode::BAD_REQUEST, "bad_data"),
-            TimeseriesError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
-            TimeseriesError::Encoding(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
-            TimeseriesError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+            Error::InvalidInput(_) => (StatusCode::BAD_REQUEST, "bad_data"),
+            Error::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+            Error::Encoding(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+            Error::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
 
         let body = serde_json::json!({
@@ -145,8 +142,8 @@ impl IntoResponse for RemoteWriteError {
     }
 }
 
-impl From<TimeseriesError> for RemoteWriteError {
-    fn from(err: TimeseriesError) -> Self {
+impl From<Error> for RemoteWriteError {
+    fn from(err: Error) -> Self {
         RemoteWriteError(err)
     }
 }
@@ -169,7 +166,7 @@ pub async fn handle_remote_write(
         .unwrap_or("");
 
     if !content_type.starts_with("application/x-protobuf") {
-        return Err(TimeseriesError::InvalidInput(format!(
+        return Err(Error::InvalidInput(format!(
             "Invalid Content-Type: expected 'application/x-protobuf', got '{}'",
             content_type
         ))
@@ -183,7 +180,7 @@ pub async fn handle_remote_write(
         .unwrap_or("");
 
     if content_encoding != "snappy" {
-        return Err(TimeseriesError::InvalidInput(format!(
+        return Err(Error::InvalidInput(format!(
             "Invalid Content-Encoding: expected 'snappy', got '{}'",
             content_encoding
         ))
@@ -278,7 +275,7 @@ mod tests {
 
         // First sample
         assert_eq!(samples[0].sample.value, 100.0);
-        assert_eq!(samples[0].sample.timestamp, 1700000000000);
+        assert_eq!(samples[0].sample.timestamp_ms, 1700000000000);
         assert_eq!(samples[0].labels.len(), 2);
         assert!(
             samples[0]
@@ -295,7 +292,7 @@ mod tests {
 
         // Second sample
         assert_eq!(samples[1].sample.value, 150.0);
-        assert_eq!(samples[1].sample.timestamp, 1700000001000);
+        assert_eq!(samples[1].sample.timestamp_ms, 1700000001000);
     }
 
     #[test]
@@ -466,10 +463,10 @@ mod tests {
     // ==================== TIMESTAMP CONVERSION TESTS ====================
 
     #[rstest]
-    #[case::positive_timestamp(1700000000000i64, 1700000000000u64)]
-    #[case::zero_timestamp(0i64, 0u64)]
-    #[case::small_timestamp(1000i64, 1000u64)]
-    fn should_convert_timestamp_correctly(#[case] input: i64, #[case] expected: u64) {
+    #[case::positive_timestamp(1700000000000i64, 1700000000000i64)]
+    #[case::zero_timestamp(0i64, 0i64)]
+    #[case::small_timestamp(1000i64, 1000i64)]
+    fn should_convert_timestamp_correctly(#[case] input: i64, #[case] expected: i64) {
         // given
         let request = WriteRequest {
             timeseries: vec![TimeSeries {
@@ -485,7 +482,7 @@ mod tests {
         let samples = convert_write_request(request);
 
         // then
-        assert_eq!(samples[0].sample.timestamp, expected);
+        assert_eq!(samples[0].sample.timestamp_ms, expected);
     }
 
     // ==================== LARGE REQUEST TESTS ====================
