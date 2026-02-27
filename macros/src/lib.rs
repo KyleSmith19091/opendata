@@ -1,4 +1,4 @@
-//! Procedural macros for OpenData 
+//! Procedural macros for OpenData
 
 mod test;
 

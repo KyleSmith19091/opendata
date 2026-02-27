@@ -637,7 +637,9 @@ mod tests {
     }
 
     #[storage_test(merge_operator = OpenTsdbMergeOperator)]
-    async fn should_query_across_multiple_buckets_with_different_series_id_mappings(storage: Arc<dyn Storage>) {
+    async fn should_query_across_multiple_buckets_with_different_series_id_mappings(
+        storage: Arc<dyn Storage>,
+    ) {
         use crate::promql::evaluator::Evaluator;
         use promql_parser::parser::EvalStmt;
         use std::time::{Duration, UNIX_EPOCH};
