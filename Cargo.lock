@@ -2540,15 +2540,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "opendata-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.111",
-]
-
-[[package]]
 name = "opendata-log-c"
 version = "0.1.0"
 dependencies = [
@@ -2558,6 +2549,15 @@ dependencies = [
  "opendata-log",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "opendata-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Expr, Ident, ItemFn, Stmt, Token, parse::Parse, parse::ParseStream, parse2};
+use syn::{Expr, Ident, ItemFn, Token, parse::Parse, parse::ParseStream, parse2};
 
 /// Parsed arguments for the storage test macro
 struct TestMacroArgs {
