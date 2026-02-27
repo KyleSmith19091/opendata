@@ -18,12 +18,14 @@ impl Parse for TestMacroArgs {
 
         // parse merge_operator = path syntax
         if input.peek(Ident) {
-            // check that next token is an identifier
             // parse as identifier
             let key: Ident = input.parse()?;
 
             match key.to_string().as_str() {
-                // parse as merge_operator = expression (Expr)
+                // parse as:
+                // match identifier: merge_operator
+                // match token '='
+                // match some expression (Expr)
                 "merge_operator" => {
                     input.parse::<Token![=]>()?;
                     merge_operator = Some(input.parse()?);
@@ -186,7 +188,7 @@ mod tests {
         // verify inner function exists with correct name
         let inner = functions
             .get("my_test__inner")
-            .expect("Should have inner function named 'my_test__inner'");
+            .expect("Should have inner function named 'my_test_inner'");
         assert!(
             inner.sig.asyncness.is_some(),
             "Inner function should be async"
@@ -251,7 +253,7 @@ mod tests {
             "Generated code should reference the merge operator"
         );
         assert!(
-            wrapper_code.contains("my_test__inner"),
+            wrapper_code.contains("my_test_inner"),
             "Wrapper should call the inner function"
         );
         assert!(
@@ -261,7 +263,7 @@ mod tests {
 
         // Verify inner function exists
         functions
-            .get("my_test__inner")
+            .get("my_test_inner")
             .expect("Should have inner function named 'my_test__inner'");
     }
 
