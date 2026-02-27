@@ -187,7 +187,7 @@ mod tests {
 
         // verify inner function exists with correct name
         let inner = functions
-            .get("my_test__inner")
+            .get("my_test_inner")
             .expect("Should have inner function named 'my_test_inner'");
         assert!(
             inner.sig.asyncness.is_some(),
@@ -264,7 +264,7 @@ mod tests {
         // Verify inner function exists
         functions
             .get("my_test_inner")
-            .expect("Should have inner function named 'my_test__inner'");
+            .expect("Should have inner function named 'my_test_inner'");
     }
 
     #[test]
