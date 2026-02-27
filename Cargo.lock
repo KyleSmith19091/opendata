@@ -2521,6 +2521,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "opendata-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "opendata-timeseries"
 version = "0.1.6"
 dependencies = [
@@ -2538,6 +2547,7 @@ dependencies = [
  "mime_guess",
  "moka",
  "opendata-common",
+ "opendata-macros",
  "prometheus-client",
  "promql-parser",
  "proptest",
@@ -2575,6 +2585,7 @@ dependencies = [
  "futures",
  "log",
  "opendata-common",
+ "opendata-macros",
  "rand 0.8.5",
  "roaring 0.10.12",
  "rstest",
