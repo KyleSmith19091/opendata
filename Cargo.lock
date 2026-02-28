@@ -2525,6 +2525,7 @@ dependencies = [
  "bytes",
  "clap",
  "opendata-common",
+ "opendata-macros",
  "prometheus-client",
  "proptest",
  "prost",
