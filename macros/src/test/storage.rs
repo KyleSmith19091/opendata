@@ -1,6 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Expr, Ident, ItemFn, Token, parse::Parse, parse::ParseStream, parse2};
+use syn::{
+    Attribute, Expr, Ident, ItemFn, Token,
+    parse::{Parse, ParseStream},
+    parse_quote, parse2,
+};
 
 /// Parsed arguments for the storage test macro
 struct TestMacroArgs {
@@ -57,10 +61,27 @@ impl Parse for TestMacroArgs {
 
 pub fn test_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     // parse arguments to the macro (see Parse impl for TestMacroArgs for implementation)
-    let args_parsed = parse2::<TestMacroArgs>(args).expect("failed to parse macro args");
+    let args_parsed = match parse2::<TestMacroArgs>(args) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error(),
+    };
 
     // parse string below macro as free standing function
-    let item_fn = parse2::<ItemFn>(input).expect("failed to parse function");
+    let item_fn = match parse2::<ItemFn>(input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error(),
+    };
+
+    let tokio_macro: Attribute = item_fn
+        .attrs
+        .iter()
+        .find(|attr| {
+            attr.path().segments.len() == 2
+                && attr.path().segments[0].ident == "tokio"
+                && attr.path().segments[1].ident == "test"
+        })
+        .cloned()
+        .unwrap_or_else(|| parse_quote!(#[tokio::test]));
 
     // grab the name of the function from signature
     let fn_name = &item_fn.sig.ident;
@@ -89,7 +110,7 @@ pub fn test_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     quote! {
-         #[::tokio::test]
+        #tokio_macro
         #[allow(unused_must_use)]
         async fn #fn_name() {
             #storage_creation
@@ -265,6 +286,39 @@ mod tests {
         functions
             .get("my_test_inner")
             .expect("Should have inner function named 'my_test_inner'");
+    }
+
+    #[test]
+    fn test_tokio_macro_args() {
+        let input = quote! {
+            #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+            async fn my_test() {
+                assert_eq!(1, 1);
+            }
+        };
+
+        let output = test_impl(TokenStream::new(), input);
+        let file = parse_output(&output);
+        let functions = extract_functions(&file);
+
+        // verify we have exactly 2 functions
+        assert_eq!(functions.len(), 2, "Should generate exactly 2 functions");
+
+        // verify wrapper function
+        let wrapper = functions
+            .get("my_test")
+            .expect("Should have wrapper function named 'my_test'");
+        assert!(
+            has_attribute(wrapper, "tokio::test"),
+            "Should have #[tokio::test] attribute"
+        );
+
+        // verify wrapper body contains storage creation with merge operator
+        assert!(wrapper.attrs.iter().any(|attr| {
+            println!("{}", attr.to_token_stream());
+            attr.to_token_stream().to_string()
+                == "# [tokio :: test (flavor = \"multi_thread\" , worker_threads = 2)]"
+        }));
     }
 
     #[test]
