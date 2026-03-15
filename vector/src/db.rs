@@ -646,8 +646,7 @@ impl VectorDb {
 
     /// Recover subscriber state from a view's storage snapshot.
     ///
-    /// When a view subscriber lags and misses broadcasts, it should call
-    /// `handle.resubscribe()` to get a fresh view, then call this method
+    /// When a view subscriber lags and misses broadcasts it should call this method
     /// to restore its in-memory state from the snapshot.
     ///
     /// The returned snapshot contains the durable centroid state (centroids,
