@@ -2329,6 +2329,7 @@ mod tests {
 
         // when - write and flush enough times to overflow the broadcast buffer
         // (capacity is 16, so ~20 flushes should cause lag)
+        // The subscriber never called recv(), so all broadcasts accumulate and overflow the buffer
         for i in 0..20 {
             let _write_handle = handle
                 .try_write(TestWrite {
@@ -2341,10 +2342,7 @@ mod tests {
             let _ = handle.flush(false).await.unwrap();
         }
 
-        // Give subscriber time to fall behind
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        // then - subscriber should eventually get Lagged error
+        // then - subscriber should get Lagged error on first recv()
         let result = subscriber.recv().await;
         if let Err(SubscribeError::Lagged) = result {
             // when - resubscribe to recover
