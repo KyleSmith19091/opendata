@@ -661,32 +661,6 @@ impl VectorDb {
         view.snapshot.clone()
     }
 
-    /// Search for k-nearest neighbors to a query vector.
-    ///
-    /// This implements the SPANN-style query algorithm:
-    /// 1. Search HNSW for nearest centroids
-    /// 2. Load posting lists for those centroids
-    /// 3. Filter deleted vectors
-    /// 4. Score candidates and return top-k
-    ///
-    /// # Arguments
-    /// * `query` - Query vector
-    /// * `k` - Number of nearest neighbors to return
-    ///
-    /// # Returns
-    /// Vector of SearchResults sorted by similarity (best first)
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - Query dimensions don't match collection dimensions
-    /// - Storage read fails
-    pub async fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
-        // clamp(10, 100) ensures we search at least 10 centroids (for small k)
-        // and at most 100 centroids (to cap memory/latency for large k)
-        let nprobe = k.clamp(10, 100);
-        self.search_with_nprobe(query, k, nprobe).await
-    }
-
     /// Create a QueryEngine from the current snapshot for executing queries.
     pub(crate) fn query_engine(&self) -> QueryEngine {
         let snapshot = self.write_coordinator.view().snapshot.clone();
