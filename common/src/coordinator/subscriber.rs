@@ -132,10 +132,7 @@ impl<D: Delta> ViewSubscriber<D> {
         }
         match self.view_rx.recv().await {
             Ok(view) => Ok(view),
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                // the subscriber is lagging behind the coordinator's progress.
-                Err(SubscribeError::Lagged)
-            }
+            Err(broadcast::error::RecvError::Lagged(_)) => Err(SubscribeError::Lagged), // the subscriber is lagging behind the coordinator's progress.
             Err(broadcast::error::RecvError::Closed) => Err(SubscribeError::Shutdown),
         }
     }
