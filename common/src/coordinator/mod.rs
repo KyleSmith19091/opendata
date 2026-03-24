@@ -2349,7 +2349,10 @@ mod tests {
         }
 
         // make changes durable
-        let mut watermark = handle.flush(true).await.expect("flush(true) should succeed");
+        let mut watermark = handle
+            .flush(true)
+            .await
+            .expect("flush(true) should succeed");
 
         // wait for durability watermark
         watermark.wait(Durability::Durable).await;

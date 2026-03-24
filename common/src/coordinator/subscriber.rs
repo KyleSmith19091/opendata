@@ -74,7 +74,9 @@ impl std::fmt::Display for SubscribeError {
             SubscribeError::NotInitialized => {
                 write!(f, "initialize() must be called before recv()")
             }
-            SubscribeError::MessageLost => write!(f, "message was lost, subscriber is lagging behind"),
+            SubscribeError::MessageLost => {
+                write!(f, "message was lost, subscriber is lagging behind")
+            }
         }
     }
 }
