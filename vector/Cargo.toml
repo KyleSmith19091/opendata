@@ -1,6 +1,6 @@
 [package]
 name = "opendata-vector"
-version = "0.1.2"
+version = "0.1.3"
 edition.workspace = true
 description = "Vector similarity search database built on SlateDB"
 license = "MIT"
@@ -31,6 +31,7 @@ common.workspace = true
 bytes.workspace = true
 dashmap.workspace = true
 fail.workspace = true
+figment.workspace = true
 futures.workspace = true
 usearch = "2"
 roaring.workspace = true
