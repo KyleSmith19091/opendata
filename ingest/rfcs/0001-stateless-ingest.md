@@ -350,6 +350,9 @@ By calling `ack(sequence)` the caller confirms that the batch with the given seq
 has been fully processed. Acks must be in order — acking a sequence that is not immediately
 after the last acked sequence returns an error. To amortize the cost of manifest writes,
 the collector batches acks and only calls `dequeue()` on the queue consumer every 100 acks.
+The `dequeue()` call removes acknowledged entries from the queue manifest but does not delete
+the corresponding data batch files from object storage. Deletion of batch files is handled
+exclusively by the garbage collector (see below).
 
 By calling `flush()` the caller forces the collector to dequeue all acked entries from the
 queue manifest immediately.
@@ -358,6 +361,55 @@ If the collector fails, a new collector can be started. It will increment the ep
 fencing the old consumer. If the caller tracks the last acked sequence, it can pass it to
 `initialize(Some(seq))` to resume where it left off. Otherwise, `initialize(None)` starts
 from the earliest unprocessed entry.
+
+
+### Garbage Collection
+
+When the collector dequeues acknowledged entries from the queue manifest, the corresponding
+data batch files remain in object storage. A background garbage collector periodically
+identifies and deletes these orphaned files.
+
+#### Mechanism
+
+The garbage collector runs as a background task within the collector process. On each cycle it:
+
+1. **Reads a snapshot of the queue manifest** to obtain the set of all currently referenced
+   batch locations and the oldest entry's location.
+2. **Lists all `.batch` files** under the configured `data_path_prefix` in object storage.
+3. **Filters candidates for deletion.** A file is eligible for deletion only if all of the
+   following hold:
+   - It is **not referenced** in the current manifest snapshot.
+   - Its ULID timestamp is **older than the oldest manifest entry's ULID timestamp**.
+     This prevents deleting a file that a producer has written to object storage but has
+     not yet enqueued in the manifest.
+   - Its ULID timestamp is **older than the configured grace period** relative to the
+     current wall-clock time. This provides an additional safety margin against race
+     conditions with in-flight producer writes.
+   - Its filename matches the expected `{ULID}.batch` format. Non-batch files are skipped.
+4. **Bulk-deletes** all eligible files using a streaming delete. Individual delete failures
+   are logged as warnings but do not abort the cycle — the files will be retried on the
+   next GC pass.
+
+The manifest snapshot is read without epoch-based fencing since the garbage collector is a
+read-only observer of the manifest and does not modify it.
+
+Note: the `object_store` crate's `list()` does not guarantee lexicographic ordering on all
+backends (e.g., S3 Express). The garbage collector lists all files and filters in memory,
+which is acceptable for the expected volume of orphaned files.
+
+#### Configuration
+
+```rust
+pub struct GarbageCollectorConfig {
+    pub manifest_path: String,       // path to the queue manifest, default: "ingest/manifest"
+    pub data_path_prefix: String,    // batch file prefix, default: "ingest"
+    pub gc_interval: Duration,       // how often GC runs, default: 5 minutes
+    pub gc_grace_period: Duration,   // minimum age before deletion, default: 10 minutes
+}
+```
+
+These fields are also available on `CollectorConfig` so that the collector can configure and
+spawn the garbage collector automatically.
 
 ### Delivery guarantees
 
@@ -453,6 +505,7 @@ None at this time.
 | 2026-03-11 | Replaced max_unflushed_bytes with max_buffered_inputs using a bounded channel |
 | 2026-03-11 | Changed queue metadata to per-range format with start_index and ingestion_time per metadata item |
 | 2026-03-11 | Replaced IngestEntry with ingest(entries: Vec\<Bytes\>, metadata: Bytes) |
+| 2026-04-06 | Added Garbage Collection section; collector no longer deletes batch files directly |
 
 
 
