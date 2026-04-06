@@ -2,15 +2,15 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::StreamExt;
-use futures::stream;
 use slatedb::object_store::ObjectStore;
 use slatedb::object_store::path::Path;
+use tokio_util::sync::CancellationToken;
 
-use crate::config::CollectorConfig;
+use crate::config::{CollectorConfig, GarbageCollectorConfig};
 use crate::error::{Error, Result};
+use crate::gc::GarbageCollector;
 use crate::model::decode_batch;
-use crate::queue::{QueueConsumer, QueueEntry};
+use crate::queue::QueueConsumer;
 
 const DEQUEUE_INTERVAL: u64 = 100;
 
@@ -35,6 +35,8 @@ pub struct Collector {
     object_store: Arc<dyn ObjectStore>,
     ack_count: Cell<u64>,
     last_acked_sequence: Cell<Option<u64>>,
+    gc_shutdown: CancellationToken,
+    gc_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Collector {
@@ -50,12 +52,29 @@ impl Collector {
     }
 
     fn with_object_store(config: CollectorConfig, object_store: Arc<dyn ObjectStore>) -> Self {
-        let consumer = QueueConsumer::with_object_store(config.manifest_path, object_store.clone());
+        let consumer =
+            QueueConsumer::with_object_store(config.manifest_path.clone(), object_store.clone());
+
+        let gc_shutdown = CancellationToken::new();
+        let gc = GarbageCollector::new(
+            GarbageCollectorConfig {
+                manifest_path: config.manifest_path,
+                data_path_prefix: config.data_path_prefix,
+                gc_interval: config.gc_interval,
+                gc_grace_period: config.gc_grace_period,
+            },
+            object_store.clone(),
+        );
+        let shutdown = gc_shutdown.clone();
+        let gc_handle = tokio::spawn(gc.collect(shutdown));
+
         Self {
             consumer,
             object_store,
             ack_count: Cell::new(0),
             last_acked_sequence: Cell::new(None),
+            gc_shutdown,
+            gc_handle: Some(gc_handle),
         }
     }
 
@@ -133,8 +152,7 @@ impl Collector {
         let count = self.ack_count.get() + 1;
         self.ack_count.set(count);
         if count.is_multiple_of(DEQUEUE_INTERVAL) {
-            let dequeued = self.consumer.dequeue(sequence).await?;
-            delete_dequeued_batches(self.object_store.clone(), dequeued);
+            self.consumer.dequeue(sequence).await?;
         }
         Ok(())
     }
@@ -142,15 +160,19 @@ impl Collector {
     /// Flush any pending acks by dequeueing up to the last acked sequence.
     pub async fn flush(&self) -> Result<()> {
         if let Some(seq) = self.last_acked_sequence.get() {
-            let dequeued = self.consumer.dequeue(seq).await?;
-            delete_dequeued_batches(self.object_store.clone(), dequeued);
+            self.consumer.dequeue(seq).await?;
         }
         Ok(())
     }
 
-    /// Flush pending acks and consume the collector.
-    pub async fn close(self) -> Result<()> {
-        self.flush().await
+    /// Flush pending acks, shut down the garbage collector, and consume the collector.
+    pub async fn close(mut self) -> Result<()> {
+        self.flush().await?;
+        self.gc_shutdown.cancel();
+        if let Some(handle) = self.gc_handle.take() {
+            let _ = handle.await;
+        }
+        Ok(())
     }
 
     /// Return the number of entries in the queue as of the last manifest read or write.
@@ -169,27 +191,6 @@ impl Collector {
     }
 }
 
-fn delete_dequeued_batches(object_store: Arc<dyn ObjectStore>, entries: Vec<QueueEntry>) {
-    if entries.is_empty() {
-        return;
-    }
-    tokio::spawn(async move {
-        let locations = stream::iter(entries.iter().map(|e| Ok(Path::from(e.location.as_str()))));
-        let mut results = object_store.delete_stream(locations.boxed());
-        let mut i = 0;
-        while let Some(result) = results.next().await {
-            if let Err(e) = result {
-                tracing::warn!(
-                    path = entries[i].location,
-                    error = %e,
-                    "failed to delete ingested data batch"
-                );
-            }
-            i += 1;
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +201,7 @@ mod tests {
     use common::StorageConfig;
     use slatedb::object_store::PutPayload;
     use slatedb::object_store::memory::InMemory;
+    use std::time::Duration;
 
     const TEST_MANIFEST_PATH: &str = "test/manifest";
 
@@ -207,6 +209,9 @@ mod tests {
         CollectorConfig {
             storage: StorageConfig::InMemory,
             manifest_path: TEST_MANIFEST_PATH.to_string(),
+            data_path_prefix: "ingest".to_string(),
+            gc_interval: Duration::from_secs(300),
+            gc_grace_period: Duration::from_secs(600),
         }
     }
 
@@ -578,84 +583,5 @@ mod tests {
         let batch = collector.next_batch().await.unwrap().unwrap();
         assert_eq!(batch.location, "batches/second");
         assert_eq!(batch.sequence, 1);
-    }
-
-    async fn assert_batch_deleted(store: &Arc<dyn ObjectStore>, location: &str) {
-        // Yield to let the spawned deletion task run.
-        tokio::task::yield_now().await;
-        let path = Path::from(location);
-        let result = store.get(&path).await;
-        assert!(
-            result.is_err(),
-            "expected batch file to be deleted: {location}"
-        );
-    }
-
-    #[tokio::test]
-    async fn should_delete_batch_file_after_flush() {
-        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let (producer, collector) = make_collector(&store, test_collector_config());
-        collector.initialize(None).await.unwrap();
-
-        let entries = test_entries();
-        let location = "batches/delete-me";
-        write_batch(&store, location, &entries).await;
-        producer
-            .enqueue(location.to_string(), vec![])
-            .await
-            .unwrap();
-
-        let batch = collector.next_batch().await.unwrap().unwrap();
-        collector.ack(batch.sequence).await.unwrap();
-        collector.flush().await.unwrap();
-
-        assert_batch_deleted(&store, location).await;
-    }
-
-    #[tokio::test]
-    async fn should_delete_batch_files_after_dequeue_interval() {
-        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let (producer, collector) = make_collector(&store, test_collector_config());
-        collector.initialize(None).await.unwrap();
-
-        let entries = test_entries();
-        let mut locations = Vec::new();
-        for i in 0..DEQUEUE_INTERVAL {
-            let location = format!("batches/interval-{:04}", i);
-            write_batch(&store, &location, &entries).await;
-            producer.enqueue(location.clone(), vec![]).await.unwrap();
-            locations.push(location);
-        }
-
-        for _ in 0..DEQUEUE_INTERVAL {
-            let batch = collector.next_batch().await.unwrap().unwrap();
-            collector.ack(batch.sequence).await.unwrap();
-        }
-
-        // The DEQUEUE_INTERVAL-th ack triggers dequeue + deletion.
-        for location in &locations {
-            assert_batch_deleted(&store, location).await;
-        }
-    }
-
-    #[tokio::test]
-    async fn should_delete_batch_files_on_close() {
-        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let (producer, collector) = make_collector(&store, test_collector_config());
-        collector.initialize(None).await.unwrap();
-
-        let entries = test_entries();
-        let location = "batches/close-me";
-        write_batch(&store, location, &entries).await;
-        producer
-            .enqueue(location.to_string(), vec![])
-            .await
-            .unwrap();
-
-        let batch = collector.next_batch().await.unwrap().unwrap();
-        collector.ack(batch.sequence).await.unwrap();
-        collector.close().await.unwrap();
-
-        assert_batch_deleted(&store, location).await;
     }
 }
