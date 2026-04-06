@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 use crate::gc::GarbageCollector;
 use crate::metric_names as m;
 use crate::model::decode_batch;
-use crate::queue::{Metadata, QueueConsumer, QueueEntry};
+use crate::queue::{Metadata, QueueConsumer};
 
 const DEQUEUE_INTERVAL: u64 = 100;
 
@@ -50,7 +50,7 @@ impl Collector {
         Ok(Self::with_object_store(config, object_store))
     }
 
-    fn with_object_store(config: CollectorConfig, object_store: Arc<dyn ObjectStore>) -> Self {
+    pub fn with_object_store(config: CollectorConfig, object_store: Arc<dyn ObjectStore>) -> Self {
         crate::metric_names::describe_collector_metrics();
         let consumer =
             QueueConsumer::with_object_store(config.manifest_path.clone(), object_store.clone());

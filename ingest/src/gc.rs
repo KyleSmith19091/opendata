@@ -184,8 +184,8 @@ mod tests {
     }
 
     async fn write_batch_file(store: &Arc<dyn ObjectStore>, location: &str) {
-        let entries = vec![Bytes::from("data")];
-        let payload = encode_batch(&entries);
+        let entries = &[Bytes::from("data")];
+        let payload = encode_batch(entries, crate::CompressionType::None).unwrap();
         let path = Path::from(location);
         store.put(&path, PutPayload::from(payload)).await.unwrap();
     }
