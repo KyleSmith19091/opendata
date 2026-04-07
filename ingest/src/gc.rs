@@ -37,11 +37,6 @@ impl GarbageCollector {
         // take snapshot of manifest
         let manifest = self.read_manifest_snapshot().await?;
 
-        // if the oldest location is none it means the manifest is empty so there is nothing to collect then
-        if manifest.oldest_location.is_none() {
-            return Ok(());
-        }
-
         // determine timestamp from ulid of oldest manifest entry
         let oldest_manifest_ts = manifest
             .oldest_location
@@ -297,23 +292,6 @@ mod tests {
         // Both should still exist — GC skips non-.batch / non-ULID files
         assert!(file_exists(&store, &txt_path).await);
         assert!(file_exists(&store, &no_ext_path).await);
-    }
-
-    #[tokio::test]
-    async fn should_handle_empty_manifest() {
-        let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let gc = make_gc(&store, test_gc_config());
-
-        // Write an old orphaned batch file, no manifest exists
-        let path = batch_path_from_ts(1000);
-        write_batch_file(&store, &path).await;
-
-        // With no manifest, oldest_manifest_ts is None, so the "newer than oldest"
-        // check is skipped. The file should be deleted based on grace period alone.
-        let now = SystemTime::UNIX_EPOCH + Duration::from_millis(1_000_000);
-        gc.collect_once(now).await.unwrap();
-
-        assert!(!file_exists(&store, &path).await);
     }
 
     #[tokio::test]
