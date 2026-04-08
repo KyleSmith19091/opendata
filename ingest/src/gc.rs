@@ -14,7 +14,7 @@ pub(crate) struct GarbageCollector {
 
 struct ManifestSnapshot {
     locations: HashSet<String>,
-    oldest_location: Option<String>,
+    oldest_location_ts: Option<SystemTime>,
 }
 
 impl GarbageCollector {
@@ -35,12 +35,6 @@ impl GarbageCollector {
         // take snapshot of manifest
         let manifest = self.read_manifest_snapshot().await?;
 
-        // determine timestamp from ulid of oldest manifest entry
-        let oldest_manifest_ts = manifest
-            .oldest_location
-            .as_deref()
-            .and_then(Self::extract_ulid_timestamp);
-
         // list files currently in object store
         let prefix = Path::from(format!("{}/", self.config.data_path_prefix));
         let mut list_stream = self.object_store.list(Some(&prefix));
@@ -60,7 +54,7 @@ impl GarbageCollector {
             };
 
             // skip if newer than the oldest manifest entry — could be an in-flight enqueue
-            if let Some(oldest_ts) = oldest_manifest_ts
+            if let Some(oldest_ts) = manifest.oldest_location_ts
                 && file_ts >= oldest_ts
             {
                 continue;
@@ -133,24 +127,22 @@ impl GarbageCollector {
         let result = self.manifest_store.read().await?;
 
         let mut locations = HashSet::new();
-        let mut oldest_location: Option<String> = None;
-        let mut oldest_ts: Option<SystemTime> = None;
+        let mut oldest_location_ts: Option<SystemTime> = None;
 
         for entry in result.0.iter() {
             let entry = entry.unwrap();
             locations.insert(entry.location.clone());
 
             if let Some(ts) = Self::extract_ulid_timestamp(&entry.location)
-                && oldest_ts.is_none_or(|old| ts < old)
+                && oldest_location_ts.is_none_or(|old| ts < old)
             {
-                oldest_ts = Some(ts);
-                oldest_location = Some(entry.location);
+                oldest_location_ts = Some(ts);
             }
         }
 
         Ok(ManifestSnapshot {
             locations,
-            oldest_location,
+            oldest_location_ts,
         })
     }
 }
