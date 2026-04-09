@@ -50,10 +50,7 @@ impl Collector {
     /// the garbage collector. If `last_acked_sequence` is `Some(seq)`, the
     /// collector resumes after that sequence; if `None`, it discovers the first
     /// available entry.
-    pub async fn new(
-        config: CollectorConfig,
-        last_acked_sequence: Option<u64>,
-    ) -> Result<Self> {
+    pub async fn new(config: CollectorConfig, last_acked_sequence: Option<u64>) -> Result<Self> {
         let object_store = common::storage::factory::create_object_store(&config.object_store)
             .map_err(|e| Error::Storage(e.to_string()))?;
         Self::with_object_store(config, object_store, last_acked_sequence).await
@@ -314,7 +311,8 @@ mod tests {
     #[tokio::test]
     async fn should_return_none_when_queue_empty() {
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let (_producer, mut collector) = make_collector(&store, test_collector_config(), None).await;
+        let (_producer, mut collector) =
+            make_collector(&store, test_collector_config(), None).await;
 
         let result = collector.next_batch().await.unwrap();
         assert!(result.is_none());
@@ -419,7 +417,8 @@ mod tests {
     #[tokio::test]
     async fn should_resume_from_last_acked_sequence() {
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let (producer, mut collector) = make_collector(&store, test_collector_config(), Some(0)).await;
+        let (producer, mut collector) =
+            make_collector(&store, test_collector_config(), Some(0)).await;
 
         let entries = test_entries();
         write_batch(&store, "batches/first", &entries).await;
@@ -550,7 +549,8 @@ mod tests {
     #[tokio::test]
     async fn should_fence_previous_collector() {
         let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
-        let (producer, mut collector1) = make_collector(&store, test_collector_config(), None).await;
+        let (producer, mut collector1) =
+            make_collector(&store, test_collector_config(), None).await;
 
         let entries = test_entries();
         write_batch(&store, "batches/first", &entries).await;

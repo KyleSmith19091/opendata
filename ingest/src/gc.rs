@@ -1,4 +1,8 @@
-use std::{collections::HashSet, sync::Arc, time::{Duration, SystemTime}};
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use futures::{StreamExt, stream};
 use slatedb::object_store::{ObjectStore, path::Path};

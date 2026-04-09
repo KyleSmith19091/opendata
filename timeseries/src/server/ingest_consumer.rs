@@ -1,7 +1,6 @@
 //! Background ingest consumer that reads OTLP metrics from an ingest queue.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use bytes::Bytes;
 use ingest::{CollectedBatch, Collector, Metadata};
