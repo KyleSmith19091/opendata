@@ -75,7 +75,13 @@ impl Collector {
         }
 
         let gc_shutdown = CancellationToken::new();
-        let gc = GarbageCollector::new(config, object_store.clone());
+        let gc = GarbageCollector::new(
+            config.manifest_path,
+            config.data_path_prefix,
+            config.gc_interval,
+            config.gc_grace_period,
+            object_store.clone(),
+        );
         let gc_handle = tokio::spawn(gc.collect(gc_shutdown.clone()));
 
         Ok(Self {
@@ -554,7 +560,7 @@ mod tests {
             .unwrap();
 
         // Second collector fences the first
-        let (_, mut collector2) = make_collector(&store, test_collector_config(), None).await;
+        let (_, _collector2) = make_collector(&store, test_collector_config(), None).await;
 
         // First collector should get a Fenced error
         let result = collector1.next_batch().await;
